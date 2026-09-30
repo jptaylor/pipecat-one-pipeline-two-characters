@@ -4,17 +4,71 @@
     "name": "Maya",
     "role": "Botanist",
     "tagline": "Grows everything in the kitchen garden. Talks to her tomatoes.",
+    "topics": "plants, flowers, gardens, growing fruit and vegetables, soil, seasons, nature",
+    "colour": "green",
+    "hex": "#c3e88d",
+    "accent": "#e4f7c2",
     "voice": "db6b0ed5-d5d3-463d-ae85-518a07d3c2b4",
-    "voiceName": "Skylar",
-    "topics": "plants, flowers, gardens, growing fruit and vegetables, soil, seasons, nature"
+    "voiceName": "Skylar"
   },
   {
     "id": "theo",
     "name": "Theo",
     "role": "Chef",
     "tagline": "Cooks whatever Maya grows. Grumbles about it the whole time.",
+    "topics": "food, cooking, recipes, ingredients, kitchens, restaurants",
+    "colour": "orange",
+    "hex": "#ff9e64",
+    "accent": "#ffc9a3",
     "voice": "ef191366-f52f-447a-a398-ed8c0f2943a1",
-    "voiceName": "Archie",
-    "topics": "food, cooking, recipes, ingredients, kitchens, restaurants, wine"
+    "voiceName": "Archie"
+  },
+  {
+    "id": "juno",
+    "name": "Juno",
+    "role": "Musician",
+    "tagline": "Plays five instruments badly and one brilliantly. Always humming.",
+    "topics": "music, songs, instruments, bands, concerts, singing, dancing",
+    "colour": "red",
+    "hex": "#ff757f",
+    "accent": "#ffb3b9",
+    "voice": "391f4c0a-f1a8-4c21-9aa2-7a07f0a4b0dc",
+    "voiceName": "Bronte"
+  },
+  {
+    "id": "otto",
+    "name": "Otto",
+    "role": "Sea captain",
+    "tagline": "Sailed every ocean, now mostly sails his armchair. Tall tales guaranteed.",
+    "topics": "the sea, sailing, boats, fishing, weather, stars, maps, travel",
+    "colour": "blue",
+    "hex": "#82aaff",
+    "accent": "#c0d4ff",
+    "voice": "db69127a-dbaf-4fa9-b425-2fe67680c348",
+    "voiceName": "Clint"
+  },
+  {
+    "id": "felix",
+    "name": "Felix",
+    "role": "Engineer",
+    "tagline": "Fixes anything with wires in it. Deadpan. Owns too many screwdrivers.",
+    "topics": "technology, computers, gadgets, science, maths, fixing things, cars",
+    "colour": "yellow",
+    "hex": "#ffc777",
+    "accent": "#ffe2b5",
+    "voice": "87286a8d-7ea7-4235-a41a-dd9fa6630feb",
+    "voiceName": "Henry"
+  },
+  {
+    "id": "edith",
+    "name": "Edith",
+    "role": "Historian",
+    "tagline": "Remembers everything that ever happened in this town, and some things that didn't.",
+    "topics": "history, the old days, the town, family stories, books, famous people",
+    "colour": "turquoise",
+    "hex": "#4fd6be",
+    "accent": "#a6f0e2",
+    "voice": "a2364c9d-1fe3-4553-9eff-100c4fe5ffc8",
+    "voiceName": "Marge"
   }
 ]

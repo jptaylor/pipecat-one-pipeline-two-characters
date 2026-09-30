@@ -7,40 +7,45 @@ export interface Character {
   role: string
   tagline: string
   voiceName: string
-  /** CSS color: the character's tint throughout the screen. */
+  /** Their favourite colour's name, which they say when they introduce themselves. */
+  colour: string
+  /** CSS color: that favourite colour, their tint throughout the screen and their aura. */
   color: string
-  /** CSS variable names for their aura: its color and its second tone. */
-  aura: { color: string; accent: string }
+  /** Their aura's second tone, a lighter shade of the same colour. */
+  accent: string
 }
 
-const COLORS = ["var(--cast-1)", "var(--cast-2)"]
-
-export const CAST: Character[] = castJson.map((c, i) => ({
+export const CAST: Character[] = castJson.map((c) => ({
   id: c.id,
   name: c.name,
   role: c.role,
   tagline: c.tagline,
   voiceName: c.voiceName,
-  color: COLORS[i],
-  aura: { color: `--cast-${i + 1}`, accent: `--cast-${i + 1}-accent` },
+  colour: c.colour,
+  color: c.hex,
+  accent: c.accent,
 }))
 
 export const BY_ID: Record<string, Character> = Object.fromEntries(
   CAST.map((c) => [c.id, c])
 )
 
-/** A speaker's or an option's name: a character, "user" or "both". */
+/** A speaker's or an option's name: a character, "user" or "group". */
 export function labelOf(id: string | null | undefined): string {
   if (!id) return "—"
   if (id === "user") return "you"
-  if (id === "both") return "both"
   return BY_ID[id]?.name ?? id
 }
 
-/** A speaker's or an option's color: a character's tint, the user's blue, both in plain text. */
+/** A speaker's or an option's color: a character's own, and plain text for you and a group. */
 export function colorOf(id: string | null | undefined): string {
   if (id && BY_ID[id]) return BY_ID[id].color
-  if (id === "user") return "var(--client)"
-  if (id === "both") return "var(--foreground)"
+  if (id === "user" || id === "group") return "var(--foreground)"
   return "var(--muted-foreground)"
+}
+
+/** Who a group turn went to: "everyone", or the names in the order they answer. */
+export function membersLabel(members: string[]): string {
+  if (members.length === CAST.length) return "everyone"
+  return members.map((m) => labelOf(m).toLowerCase()).join(", ")
 }

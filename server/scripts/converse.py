@@ -4,8 +4,9 @@
     uv run python scripts/converse.py --script FILE   # one user line per line of FILE
     uv run python scripts/converse.py --no-welcome
 
-Each user line is routed by Jev (`addressee`) to one character, or to both, who answer in turn,
-each with its own view of the whole conversation, as `director.py` does in the bot.
+Each user line is routed by Jev to one character, or to a group who answer in turn, each with
+their own view of the whole conversation. After each line, Jev decides whether someone else at the
+table answers it, until it hands the floor back to the user, as `director.py` does in the bot.
 """
 
 from __future__ import annotations
@@ -24,9 +25,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import services  # noqa: E402
 from cast import prompt  # noqa: E402
 from config import (  # noqa: E402
+    CLOSE_FLOOR,
     LLM_TEMPERATURE,
     LLM_TOKENS,
+    MAX_BOUNCES,
     RECENCY_WEIGHT,
+    REPLY_FLOOR,
     Settings,
     load_cast,
     load_environment,
@@ -37,6 +41,7 @@ from room import (  # noqa: E402
     Reading,
     Referee,
     Transcript,
+    plan_reply,
     plan_route,
     plan_welcome,
     weigh,
@@ -46,10 +51,17 @@ DIM, BOLD, RESET = "\033[2m", "\033[1m", "\033[0m"
 
 
 def show(reading: Reading) -> None:
-    odds = "  ".join(f"{k} {v:.2f}" for k, v in reading.probabilities.items())
+    top = sorted(reading.probabilities.items(), key=lambda kv: -kv[1])[:3]
+    odds = "  ".join(f"{k} {v:.2f}" for k, v in top)
+    if reading.choice == "group":
+        asked = [f"{k} {v:.2f}" for k, v in reading.included.items() if v >= 0.5]
+        odds += "  | asked: " + " ".join(asked)
     if reading.raw:
-        raw = "  ".join(f"{k} {v:.2f}" for k, v in reading.raw.items())
+        top = sorted(reading.raw.items(), key=lambda kv: -kv[1])[:3]
+        raw = "  ".join(f"{k} {v:.2f}" for k, v in top)
         odds += f"  (jev: {raw}; x{reading.weight:g} {reading.favoured})"
+    if reading.closed is not None:
+        odds += f"  | closed {reading.closed:.2f}"
     extra = " (cached)" if reading.cached else ""
     error = f" ERROR {reading.error}" if reading.error else ""
     print(f"{DIM}  jev {reading.kind:<8} {reading.ms:4.0f} ms{extra}  {odds}{error}{RESET}")
@@ -65,7 +77,7 @@ async def main() -> None:
     settings = Settings.from_env()
     cast = load_cast()
     names = {c.id: c.name for c in cast}
-    prompts = {cast[0].id: prompt(cast[0], cast[1]), cast[1].id: prompt(cast[1], cast[0])}
+    prompts = {c.id: prompt(c, cast) for c in cast}
     transcript = Transcript(cast)
     jev = services.jev(settings)
     referee = Referee(JevClassifier(client=jev), cast)
@@ -88,13 +100,28 @@ async def main() -> None:
         return text
 
     async def play(cues: list[Cue]) -> None:
-        for cue in cues:
-            transcript.add(cue.speaker, await speak(cue))
+        queue, bounces = list(cues), 0
+        while queue:
+            cue = queue.pop(0)
+            history = list(transcript.lines)
+            text = await speak(cue)
+            transcript.add(cue.speaker, text)
+            if queue or bounces >= MAX_BOUNCES:
+                continue
+            run = transcript.run(history) + 1
+            reading = await referee.reply(transcript, history, cue.speaker, text, run)
+            show(reading)
+            reply, why = plan_reply(reading, transcript, REPLY_FLOOR, CLOSE_FLOOR, run)
+            print(f"{DIM}  → {reply.speaker if reply else 'user'} ({why}){RESET}")
+            if reply is not None:
+                queue.append(reply)
+                bounces += 1
 
     lines = args.script.read_text().splitlines() if args.script else None
     print(f"{DIM}PhoneLLM {settings.llm_model}, Jev {referee.model}{RESET}")
     await services.warm_llm(settings)
-    addressed: str | None = None  # who the user spoke to last
+    favoured: str | None = None  # Jev's last choice: a character, or a group
+    addressed: list[str] = []  # everyone it cued
     try:
         if not args.no_welcome:
             await play(plan_welcome(transcript))
@@ -113,10 +140,12 @@ async def main() -> None:
             history = list(transcript.lines)
             transcript.add(USER, said)
             reading = await referee.addressee(transcript, history, said, last_addressed=addressed)
-            reading = weigh(reading, addressed, RECENCY_WEIGHT)
+            reading = weigh(reading, favoured, RECENCY_WEIGHT)
             show(reading)
-            addressed = reading.choice or addressed
-            await play(plan_route(reading, transcript))
+            cues = plan_route(reading, transcript)
+            if reading.choice:
+                favoured, addressed = reading.choice, [cue.speaker for cue in cues]
+            await play(cues)
     finally:
         await referee.close()
         await jev.close()

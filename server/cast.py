@@ -4,13 +4,14 @@ A character's turn arrives with its activation: the room activates the character
 and passes that character's view of the whole conversation (`TurnArgs`), and the worker runs its
 LLM on it at once. The turn travels inside the activation rather than as a frame over the bridge
 because the bus drops frames sent to a worker that isn't active yet, and activation is itself a bus
-message: a frame sent right behind it could overtake it. The other character is deactivated, so it
-hears nothing until its own turn, when it is handed the conversation in full.
+message: a frame sent right behind it could overtake it. The others stay inactive, so they hear
+nothing until their own turn, when they are handed the conversation in full.
 """
 
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
@@ -25,19 +26,23 @@ from pipecat.workers.llm import LLMWorker
 from config import Character
 
 PROMPTS = Path(__file__).resolve().parent / "prompts"
+COUNTS = {1: "one", 2: "two", 3: "three", 4: "four", 5: "five", 6: "six", 7: "seven"}
 
 
-def prompt(me: Character, other: Character) -> str:
-    """`me`'s system prompt: `prompts/character.md` with `prompts/<id>.md` as its persona."""
+def prompt(me: Character, cast: Sequence[Character]) -> str:
+    """`me`'s system prompt: `prompts/character.md`, with `prompts/<id>.md` as their persona and
+    everyone else at the table listed."""
     persona_file = PROMPTS / f"{me.id}.md"
     persona = persona_file.read_text().strip() if persona_file.exists() else ""
+    others = [c for c in cast if c.id != me.id]
     values = {
         "name": me.name,
         "role": me.role.lower(),
         "tagline": me.tagline,
-        "other": other.name,
-        "other_role": other.role.lower(),
-        "other_tagline": other.tagline,
+        "colour": me.colour,
+        "count": COUNTS.get(len(others), str(len(others))),
+        "others": "\n".join(f"- {c.brief()}" for c in others),
+        "example": others[0].name,
     }
     values["persona"] = fill(persona, values)
     return fill((PROMPTS / "character.md").read_text().strip(), values)

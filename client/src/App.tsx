@@ -51,7 +51,10 @@ function Session({
         <h1 className="flex items-center gap-2.5 text-base">
           <img src={pipecatLogo} alt="Pipecat" className="h-[21px] w-auto" />
           <span className="ml-1.5 text-muted-foreground/60">/</span>
-          <span className="font-medium text-agent">two voices</span>
+          <span className="font-medium text-agent">{CAST.length} voices</span>
+          <span className="text-[13px] text-muted-foreground/70">
+            one pipeline
+          </span>
         </h1>
         {live && (
           <button
@@ -75,15 +78,19 @@ function Session({
       {/* Mounted while connecting too, so the welcome's first messages aren't missed. */}
       <main
         className={cn(
-          "grid min-h-0 flex-1 grid-cols-2 grid-rows-[minmax(0,1.1fr)_minmax(0,1fr)] gap-4",
+          "grid min-h-0 flex-1 grid-cols-[1.45fr_1fr] gap-4",
           !live && "hidden"
         )}
       >
-        {CAST.map((c) => (
-          <CharacterPanel key={c.id} character={c} />
-        ))}
-        <ConversationPanel />
-        <DebugPanel />
+        <div className="grid min-h-0 grid-cols-3 grid-rows-2 gap-4">
+          {CAST.map((c) => (
+            <CharacterPanel key={c.id} character={c} />
+          ))}
+        </div>
+        <div className="flex min-h-0 flex-col gap-4">
+          <ConversationPanel />
+          <DebugPanel />
+        </div>
       </main>
 
       <footer className="flex h-6 shrink-0 items-center text-[13px] font-medium">

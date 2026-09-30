@@ -53,7 +53,11 @@ function Reading({ reading }: { reading: JevReading }) {
     >
       <div className="flex items-baseline justify-between gap-2 text-muted-foreground/70">
         <span>
-          {preview ? "frontrun · still speaking" : "route · turn ended"}
+          {preview
+            ? "frontrun · still speaking"
+            : reading.kind === "reply"
+              ? `reply · after ${labelOf(reading.speaker).toLowerCase()}'s line`
+              : "route · turn ended"}
         </span>
         <span className="whitespace-pre tabular-nums">
           <span className={slow ? "text-tool" : undefined}>
@@ -69,6 +73,11 @@ function Reading({ reading }: { reading: JevReading }) {
       </div>
       <p>
         <span className="text-agent">heard ❯ </span>
+        {reading.kind === "reply" && (
+          <span style={{ color: colorOf(reading.speaker) }}>
+            {labelOf(reading.speaker).toLowerCase()}:{" "}
+          </span>
+        )}
         {reading.heard}
       </p>
       {reading.error ? (
@@ -79,6 +88,38 @@ function Reading({ reading }: { reading: JevReading }) {
           choice={reading.choice}
           cells={18}
         />
+      )}
+      {reading.closed !== null && (
+        <div>
+          <p className="text-muted-foreground/70">
+            exchange run its course? ❯ yes/no, same request
+            {reading.next && (
+              <span className="text-foreground">
+                {"  "}→{" "}
+                {reading.next === "user"
+                  ? `back to you (${reading.why === "unsure" ? "not sure enough" : reading.why === "closed" ? "closed" : "jev chose you"})`
+                  : `${labelOf(reading.next).toLowerCase()} replies`}
+              </span>
+            )}
+          </p>
+          <OddsBars
+            probabilities={{ closed: reading.closed }}
+            chosen={reading.closed >= 0.5 ? ["closed"] : []}
+            cells={18}
+          />
+        </div>
+      )}
+      {reading.choice === "group" && (
+        <div>
+          <p className="text-muted-foreground/70">
+            who's asked ❯ one yes/no each, same request
+          </p>
+          <OddsBars
+            probabilities={reading.included}
+            chosen={reading.members}
+            cells={18}
+          />
+        </div>
       )}
       {reading.raw && <Prior reading={reading} raw={reading.raw} />}
       <div>
@@ -110,13 +151,16 @@ function Prior({
         {labelOf(reading.favoured).toLowerCase()}
       </span>
       {"  "}jev alone:
-      {orderOptions(raw).map((k) => (
-        <span key={k}>
-          {"  "}
-          {labelOf(k).toLowerCase()}
-          {percent(raw[k])}
-        </span>
-      ))}
+      {orderOptions(raw)
+        .sort((a, b) => raw[b] - raw[a])
+        .slice(0, 3)
+        .map((k) => (
+          <span key={k}>
+            {"  "}
+            {labelOf(k).toLowerCase()}
+            {percent(raw[k])}
+          </span>
+        ))}
     </p>
   )
 }
@@ -212,7 +256,7 @@ export function DebugPanel() {
           "both characters are handed the whole conversation"
         )
       }
-      className="flex min-h-0 flex-col"
+      className="flex min-h-0 flex-1 flex-col"
     >
       <div className="min-h-0 flex-1 overflow-y-auto px-4 pt-5 pb-5">
         {view === "jev" ? (

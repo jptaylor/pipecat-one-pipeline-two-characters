@@ -14,6 +14,8 @@ export interface Line extends LineMessage {
   id: number
   /** Jev's reading of a user line: who it was said to. */
   route?: JevReading
+  /** Jev's reading of a character's line: does someone at the table answer it? */
+  reply?: JevReading
 }
 
 interface RoomState {
@@ -91,11 +93,19 @@ export const useRoom = create<RoomState>()((set) => ({
         case "jev": {
           const readings = [...s.readings, message].slice(-MAX_READINGS)
           if (message.kind === "preview") return { readings, preview: message }
-          // A route belongs to the user line just before it.
+          // A route belongs to the user line just before it, a reply to its speaker's line.
           const lines = [...s.lines]
-          const i = lastIndex(lines, (l) => l.speaker === "user")
-          if (i >= 0) lines[i] = { ...lines[i], route: message }
-          return { readings, lines, preview: null }
+          const i = lastIndex(lines, (l) => l.speaker === message.speaker)
+          if (i >= 0)
+            lines[i] = {
+              ...lines[i],
+              [message.kind === "reply" ? "reply" : "route"]: message,
+            }
+          return {
+            readings,
+            lines,
+            preview: message.kind === "route" ? null : s.preview,
+          }
         }
       }
     }),

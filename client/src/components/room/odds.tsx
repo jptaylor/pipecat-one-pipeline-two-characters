@@ -26,11 +26,14 @@ export function Meter({
 export function OddsBars({
   probabilities,
   choice,
+  chosen = [],
   cells = 20,
   className,
 }: {
   probabilities: Record<string, number>
   choice?: string | null
+  /** Options to highlight besides `choice` (a group's members). */
+  chosen?: string[]
   cells?: number
   className?: string
 }) {
@@ -38,20 +41,20 @@ export function OddsBars({
     <div className={cn("grid", className)}>
       {orderOptions(probabilities).map((option) => {
         const p = probabilities[option] ?? 0
-        const chosen = option === choice
+        const picked = option === choice || chosen.includes(option)
         return (
           <div key={option} className="flex items-center gap-2 whitespace-pre">
             <span
-              className={chosen ? "text-foreground" : "text-muted-foreground"}
+              className={picked ? "text-foreground" : "text-muted-foreground"}
             >
-              {chosen ? "❯ " : "  "}
+              {picked ? "❯ " : "  "}
               {labelOf(option).toLowerCase().padEnd(5, " ")}
             </span>
-            <Meter p={p} color={colorOf(option)} cells={cells} dim={!chosen} />
+            <Meter p={p} color={colorOf(option)} cells={cells} dim={!picked} />
             <span
               className={cn(
                 "tabular-nums",
-                chosen ? "text-foreground" : "text-muted-foreground"
+                picked ? "text-foreground" : "text-muted-foreground"
               )}
             >
               {percent(p)}

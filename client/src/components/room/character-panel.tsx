@@ -25,13 +25,13 @@ const STATUS = {
 /** The side of the largest square that fits the element. */
 function useSquare<T extends HTMLElement>() {
   const ref = useRef<T>(null)
-  const [side, setSide] = useState(280)
+  const [side, setSide] = useState(200)
   useEffect(() => {
     const el = ref.current
     if (!el) return
     const observer = new ResizeObserver(([entry]) => {
       const { width, height } = entry.contentRect
-      setSide(Math.max(120, Math.floor(Math.min(width, height))))
+      setSide(Math.max(80, Math.floor(Math.min(width, height))))
     })
     observer.observe(el)
     return () => observer.disconnect()
@@ -40,24 +40,21 @@ function useSquare<T extends HTMLElement>() {
 }
 
 /**
- * One character: their aura, and how sure Jev is that you're talking to them.
+ * One character: their aura in their favourite colour, and how likely Jev thinks it is that
+ * you're talking to them, alone or as one of a group (live while you speak).
  *
- * There is one bot audio track for both voices, so it is routed here: only the character the
- * bot's last `speaker` message named gets the track, and the other's aura rests. While a
+ * There is one bot audio track for every voice, so it is routed here: only the character the
+ * bot's last `speaker` message named gets the track, and everyone else's aura rests. While a
  * character has the floor but hasn't been heard yet, their aura pulses (thinking).
  */
 export function CharacterPanel({ character }: { character: Character }) {
   const state = useRoom((s) => characterState(s, character.id))
   const reading = useRoom(
-    (s) => s.preview ?? s.readings.findLast((r) => r.kind === "route") ?? null
+    (s) => s.preview ?? s.readings.findLast((r) => r.kind !== "preview") ?? null
   )
   const botTrack = usePipecatClientMediaTrack("audio", "bot")
   const [box, side] = useSquare<HTMLDivElement>()
-  // Talking to them alone, or to both of them.
-  const p = reading
-    ? (reading.probabilities[character.id] ?? 0) +
-      (reading.probabilities["both"] ?? 0)
-    : null
+  const p = reading ? (reading.addressed[character.id] ?? 0) : null
   const status = STATUS[state]
   const onFloor = state !== "listening"
 
@@ -65,9 +62,10 @@ export function CharacterPanel({ character }: { character: Character }) {
     <Panel
       title={`${character.name.toLowerCase()} · ${character.role.toLowerCase()}`}
       status={
+        // Listening is the usual state: a dim dot, so the name has room on a narrow tile.
         <span className="text-muted-foreground">
-          <span className={cn("mr-1.5", status.tone)}>●</span>
-          {status.label}
+          <span className={cn(onFloor && "mr-1.5", status.tone)}>●</span>
+          {onFloor && status.label}
         </span>
       }
       className="flex min-h-0 flex-col transition-colors duration-500"
@@ -81,32 +79,29 @@ export function CharacterPanel({ character }: { character: Character }) {
           <AudioVisualizerWaveView
             track={state === "speaking" ? botTrack : null}
             isThinking={state === "thinking"}
-            size={Math.min(side, 420)}
-            color={character.aura.color}
-            accentColor={character.aura.accent}
+            size={Math.min(side, 300)}
+            color={character.color}
+            accentColor={character.accent}
             colorShift={0.4}
             noHighlight
             amplitude={0.5}
             fill={0.85}
             hollow={0.2}
             core={0.3}
-            density={onFloor ? 0.42 : 0.32}
-            glow={onFloor ? 0.85 : 0.55}
+            density={onFloor ? 0.36 : 0.32}
+            glow={onFloor ? 0.65 : 0.55}
             dither={DITHER}
           />
         </div>
       </div>
-      <div className="flex shrink-0 items-center justify-center gap-2 px-4 pb-4 whitespace-pre">
+      <div className="flex shrink-0 items-center justify-center gap-1.5 px-3 pb-3 whitespace-pre">
         {/* Green while it reads words you're still speaking. */}
         <span
           className={reading?.kind === "preview" ? "text-active" : "text-agent"}
         >
           jev
         </span>
-        <span className="text-muted-foreground">
-          ❯ to {character.name.toLowerCase()}
-        </span>
-        <Meter p={p ?? 0} color={character.color} cells={16} />
+        <Meter p={p ?? 0} color={character.color} cells={10} />
         <span className="text-foreground tabular-nums">
           {p === null ? "   —" : percent(p)}
         </span>

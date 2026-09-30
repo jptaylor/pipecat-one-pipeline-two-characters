@@ -1,16 +1,15 @@
-"""One conversation, two characters. Run with `uv run bot.py` (http://localhost:7860).
+"""One conversation, a table of characters. Run with `uv run bot.py -t webrtc` (localhost:7860).
 
-Three workers share one runner and its bus (`director.py` has the details):
+One worker per character, and the room, share one runner and its bus (`director.py` has the
+details):
 
     room   transport → Deepgram → Hearing → user aggregator → Router → CastBridge → Cartesia
            → transport → Playback → assistant aggregator
-    maya   a character: PhoneLLM with Maya's prompt, active only on her turns
-    theo   a character: PhoneLLM with Theo's prompt, active only on his turns
+    maya, theo, …   a character each: PhoneLLM with their prompt, active only on their turns
 
-Jev reads who each user turn is said to (while it is still being spoken, too), the director hands
-the turn to that character with the whole conversation, and the bridge switches Cartesia to their
-voice. Jev also reads each line a character says, and a line that hands the floor to the other
-character gives them the next turn. The session ends when the client leaves.
+Jev reads who each user turn is said to (while it is still being spoken, too): one character, or a
+group who answer in turn. The director hands each turn over with the whole conversation, and the
+bridge switches Cartesia to the speaker's voice. The session ends when the client leaves.
 """
 
 from __future__ import annotations
@@ -53,7 +52,7 @@ TRANSPORT_PARAMS = {
 async def run_bot(transport: BaseTransport, runner_args: RunnerArguments) -> None:
     settings = Settings.from_env()
     cast = load_cast()
-    first, second = cast
+    first = cast[0]
     runner = WorkerRunner(handle_sigint=runner_args.handle_sigint)
     warming = asyncio.create_task(services.warm_llm(settings))
 
@@ -124,13 +123,13 @@ async def run_bot(transport: BaseTransport, runner_args: RunnerArguments) -> Non
         await runner.cancel()
 
     logger.info(
-        f"Session: {first.name} and {second.name} on {settings.llm_model}, Jev {settings.jev_model}"
+        f"Session: {', '.join(c.name for c in cast)} on {settings.llm_model}, "
+        f"Jev {settings.jev_model}"
     )
     try:
         await jev.connect()
         await runner.add_workers(
-            CharacterWorker(first, services.llm(settings, prompt(first, second))),
-            CharacterWorker(second, services.llm(settings, prompt(second, first))),
+            *(CharacterWorker(c, services.llm(settings, prompt(c, cast))) for c in cast),
             room,
         )
         await runner.run()

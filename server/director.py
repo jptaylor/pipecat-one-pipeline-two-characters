@@ -9,17 +9,17 @@ The room worker's pipeline, and where the director sits in it:
   Jev reads who they are talking to while they are still talking (a frontrun: the final read of
   the same words is then a cache hit).
 - `Router` takes each finished user turn (the aggregator's `LLMContextFrame`) out of the stream:
-  the director routes it with Jev and hands the turn to one character (or to both, one after
-  the other) by activating that character's worker with its view of the conversation.
+  the director routes it with Jev and hands the turn to one character (or to each of a group,
+  one after the other) by activating that character's worker with its view of the conversation.
 - `CastBridge` is the bus bridge: the characters' lines come back through it, and it switches the
   TTS to the voice of whoever is speaking, in-band, just before their line.
 - `Playback` watches the bot start and stop speaking: the client is told whose voice is playing,
-  and when both characters answer, the second waits for the first's line to finish playing.
+  and when several characters answer, each waits for the line before theirs to finish playing.
 - The assistant aggregator's `on_assistant_turn_stopped` tells the director what was actually
-  said (cut short if interrupted). If the user spoke to both, the other character answers next.
-
-The characters never talk to each other: both listen to the user, and only the user's turns are
-routed.
+  said (cut short if interrupted). If the user spoke to a group, the next of them answers.
+  Otherwise Jev reads the line (`Referee.reply`, asked as soon as the line is written): if it's
+  for someone else at the table to answer, they do, and so on, until Jev gives the floor back to
+  the user (or `MAX_BOUNCES` replies in a row). Speaking or typing always takes the floor.
 
 Everything the director decides goes to the client as RTVI server messages: `jev` (each reading),
 `turn` (who has the floor and why), `speaker` (whose voice is playing, sent as the audio starts and
@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import asyncio
 import time
+from collections.abc import Sequence
 from typing import Any
 
 from loguru import logger
@@ -55,8 +56,17 @@ from pipecat.processors.frame_processor import FrameDirection, FrameProcessor
 from pipecat.services.cartesia.tts import CartesiaTTSService
 
 from cast import TurnArgs
-from config import HANDOVER_WAIT_S, RECENCY_WEIGHT, ROUTE_WAIT_S, Character
+from config import (
+    CLOSE_FLOOR,
+    HANDOVER_WAIT_S,
+    MAX_BOUNCES,
+    RECENCY_WEIGHT,
+    REPLY_FLOOR,
+    ROUTE_WAIT_S,
+    Character,
+)
 from room import (
+    GROUP,
     USER,
     Cue,
     Line,
@@ -64,6 +74,7 @@ from room import (
     Referee,
     Transcript,
     normalize,
+    plan_reply,
     plan_route,
     plan_welcome,
     weigh,
@@ -81,9 +92,9 @@ def user_text(message: Any) -> str:
 
 
 class Director:
-    """Decides who speaks, and keeps the one transcript both characters are shown."""
+    """Decides who speaks, and keeps the one transcript every character is shown."""
 
-    def __init__(self, cast: tuple[Character, Character], referee: Referee) -> None:
+    def __init__(self, cast: Sequence[Character], referee: Referee) -> None:
         self.cast = {c.id: c for c in cast}
         self.transcript = Transcript(cast)
         self.referee = referee
@@ -91,8 +102,12 @@ class Director:
 
         self.active: str | None = None  # the character whose turn it is (their worker is active)
         self.speaking: str | None = None  # whose line is flowing to the TTS
-        self._queue: list[Cue] = []  # turns promised after this one ("both", the welcome)
-        self._addressed: str | None = None  # who the user spoke to last: a character, or "both"
+        self._queue: list[Cue] = []  # turns promised after this one (a group, the welcome)
+        # Who the user spoke to last: Jev's choice (a character, or a group), for the recency
+        # prior, and everyone it cued, for Jev's state.
+        self._favoured: str | None = None
+        self._addressed: list[str] = []
+        self._bounces = 0  # characters answering characters since the user last spoke
         self._generated: dict[str, str] = {}  # each character's latest line, as written
 
         self._seen = 0  # messages of the aggregator's context already read
@@ -110,9 +125,6 @@ class Director:
         self._handover_task: asyncio.Task | None = None
 
     # --- Wiring --------------------------------------------------------------------------------
-
-    def other(self, character: str) -> str:
-        return next(c for c in self.cast if c != character)
 
     def spawn(self, coro: Any, name: str) -> asyncio.Task:
         task = asyncio.create_task(coro, name=name)
@@ -148,7 +160,7 @@ class Director:
     # --- Turns ---------------------------------------------------------------------------------
 
     async def welcome(self) -> None:
-        """Both characters say hello, one after the other."""
+        """Everyone says hello in turn, with their favourite colour."""
         await self.send_cast()
         cues = plan_welcome(self.transcript)
         self._queue = cues[1:]
@@ -156,13 +168,14 @@ class Director:
 
     async def dispatch(self, cue: Cue) -> None:
         """Give `cue.speaker` the floor: activate their worker with their view of the whole
-        conversation, and make sure the other character is quiet."""
+        conversation, and quieten whoever had it before."""
         assert self.worker is not None
         messages = self.transcript.view(cue.speaker, cue.note)
-        self.active = cue.speaker
+        previous, self.active = self.active, cue.speaker
         self._line_started = False
         self._line_done = asyncio.Event()
-        await self.worker.deactivate_worker(self.other(cue.speaker))
+        if previous is not None and previous != cue.speaker:
+            await self.worker.deactivate_worker(previous)
         await self.worker.activate_worker(cue.speaker, args=TurnArgs(messages=messages))
         name = self.cast[cue.speaker].name
         logger.info(f"Director: {name}'s turn ({cue.reason}{f': {cue.note}' if cue.note else ''})")
@@ -183,6 +196,7 @@ class Director:
         fresh = messages[self._seen :]
         self._seen = len(messages)
         self._turns += 1
+        self._bounces = 0
         said = normalize(" ".join(user_text(m) for m in fresh))
         self._finals.clear()
         self._interim = ""
@@ -208,12 +222,13 @@ class Director:
             )
         except TimeoutError:
             reading = Reading("route", USER, said, None, error=f"no answer in {ROUTE_WAIT_S} s")
-        reading = weigh(reading, self._addressed, RECENCY_WEIGHT)
+        reading = weigh(reading, self._favoured, RECENCY_WEIGHT)
         await self.emit(reading.to_message())
         self.log_reading(reading)
-        if reading.choice:
-            self._addressed = reading.choice
         cues = plan_route(reading, self.transcript)
+        if reading.choice:
+            self._favoured = reading.choice
+            self._addressed = [cue.speaker for cue in cues]
         self._queue = cues[1:]
         await self.dispatch(cues[0])
 
@@ -242,40 +257,67 @@ class Director:
             )
             if turn != self._turns:  # the turn ended while Jev read it: the route has it
                 return
-            await self.emit(weigh(reading, self._addressed, RECENCY_WEIGHT).to_message())
+            await self.emit(weigh(reading, self._favoured, RECENCY_WEIGHT).to_message())
 
     def line_generated(self, speaker: str, text: str) -> None:
-        """A character's whole line, as written (the TTS's word timings drop some punctuation)."""
-        self._generated[speaker] = normalize(text)
+        """A character's whole line, as written, before it has finished playing (the TTS's word
+        timings drop some punctuation, so this is what gets recorded). Unless a group is still
+        answering, Jev reads it now for a reply, so the answer is ready when the line ends."""
+        text = normalize(text)
+        self._generated[speaker] = text
+        if text and not self._queue and self._bounces < MAX_BOUNCES:
+            history = list(self.transcript.lines)
+            run = self.transcript.run(history) + 1
+            reply = self.referee.reply(self.transcript, history, speaker, text, run)
+            self.spawn(reply, "reply frontrun")
 
     async def line_spoken(self, content: str, interrupted: bool) -> None:
-        """A character's line has ended: record what was said, and if the user spoke to both,
-        hand over to the other one."""
+        """A character's line has ended: record what was said. If the user spoke to a group, the
+        next of them answers; otherwise Jev decides whether someone at the table answers this
+        line, or it's the user's turn."""
         speaker = self.speaking
         if speaker is None:
             return
         written = self._generated.pop(speaker, None)
-        # A whole line is recorded as written (the TTS's word timings drop some punctuation);
-        # a line cut short, as far as it was heard.
+        # A whole line is recorded as written; a line cut short, as far as it was heard.
         text = normalize(content if interrupted or not written else written)
         if not text:
             if interrupted:
                 self._queue.clear()
             return
+        history = list(self.transcript.lines)
         line = self.transcript.add(speaker, text, interrupted=interrupted)
         await self.emit_line(line)
         if interrupted or self._user_speaking:
             self._queue.clear()
-        elif self._queue:
-            self._handover_task = self.spawn(self._hand_over(self._queue.pop(0)), "handover")
+            return
+        turn = self._turns
+        if self._queue:
+            self._handover_task = self.spawn(self._hand_over(self._queue.pop(0), turn), "handover")
+            return
+        if self._bounces >= MAX_BOUNCES:
+            logger.info(f"Director: {MAX_BOUNCES} replies in a row; the floor is the user's")
+            return
+        run = self.transcript.run(history) + 1
+        reading = await self.referee.reply(self.transcript, history, speaker, text, run)
+        if turn != self._turns or self._user_speaking:
+            return  # the user has spoken since: their turn wins
+        cue, why = plan_reply(reading, self.transcript, REPLY_FLOOR, CLOSE_FLOOR, run)
+        # What came of it: who answers next, or the user's turn, and why.
+        next_ = cue.speaker if cue else USER
+        await self.emit({**reading.to_message(), "next": next_, "why": why})
+        self.log_reading(reading)
+        if cue is not None:
+            self._bounces += 1
+            self._handover_task = self.spawn(self._hand_over(cue, turn), "reply")
 
-    async def _hand_over(self, cue: Cue) -> None:
+    async def _hand_over(self, cue: Cue, turn: int) -> None:
         # The next line waits for this one to finish playing, unless the user takes the floor.
         try:
             await asyncio.wait_for(self._line_done.wait(), HANDOVER_WAIT_S)
         except TimeoutError:
             logger.warning(f"Director: the line didn't finish playing in {HANDOVER_WAIT_S} s")
-        if self._user_speaking:
+        if self._user_speaking or turn != self._turns:
             return
         await self.dispatch(cue)
 
@@ -322,10 +364,16 @@ class Director:
         how = "cached" if reading.cached else f"{reading.ms:.0f} ms"
         error = f" ({reading.error})" if reading.error else ""
         prior = ""
+        if reading.choice == GROUP:
+            asked = ", ".join(
+                f"{c} {reading.included[c]:.2f}" for c in reading.group(list(self.cast))
+            )
+            odds += f"; asked: {asked}"
         if reading.raw:
             raw = ", ".join(f"{k} {v:.2f}" for k, v in reading.raw.items())
             prior = f" (Jev: {raw}; ×{reading.weight:g} for {reading.favoured})"
-        logger.info(f'Jev {reading.kind}: "{reading.heard}" → {odds}{prior} [{how}]{error}')
+        closed = "" if reading.closed is None else f"; closed {reading.closed:.2f}"
+        logger.info(f'Jev {reading.kind}: "{reading.heard}" → {odds}{closed}{prior} [{how}]{error}')
 
     # --- Processors ----------------------------------------------------------------------------
 

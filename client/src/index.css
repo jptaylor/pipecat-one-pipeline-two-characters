@@ -57,8 +57,6 @@
     --color-agent: var(--agent);
     --color-client: var(--client);
     --color-tool: var(--tool);
-    --color-cast-1: var(--cast-1);
-    --color-cast-2: var(--cast-2);
     --animate-ptt-pulse: ptt-pulse 1.5s ease-in-out infinite;
     /* Hard on/off, no fade: a terminal caret, not a UI caret. */
     --animate-terminal-caret: terminal-caret 1.06s step-end infinite;
@@ -86,8 +84,8 @@
    The accent tokens carry the meaning the chrome is drawn with: agent is
    the lavender every panel legend and Jev use, client the blue on the
    user's lines, active the green for live/go, inactive the pink for
-   muted/stop, tool the amber on latency that has run long, and cast-1 and
-   cast-2 the two characters. */
+   muted/stop, and tool the amber on latency that has run long. Each
+   character's colour is their favourite, from characters.json. */
 :root {
     --background: #121218;
     --foreground: #c9cee3;
@@ -115,12 +113,6 @@
     --agent: #bb9af7;
     --client: #7aa2f7;
     --tool: #e0af68;
-    /* The two characters, in the order of characters.json: Maya teal, Theo orange. */
-    --cast-1: #73daca;
-    --cast-2: #ff9e64;
-    /* Each aura's second tone, near its own so it reads as one color: teal against orange. */
-    --cast-1-accent: #b4f9f8;
-    --cast-2-accent: #e0af68;
 }
 
 @layer base {

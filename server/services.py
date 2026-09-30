@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+from collections.abc import Sequence
 
 from loguru import logger
 from openai import AsyncOpenAI
@@ -50,7 +51,7 @@ def llm(settings: Settings, system_prompt: str) -> PhoneLLMService:
     )
 
 
-def stt(settings: Settings, cast: tuple[Character, Character]) -> DeepgramSTTService:
+def stt(settings: Settings, cast: Sequence[Character]) -> DeepgramSTTService:
     return DeepgramSTTService(
         api_key=settings.deepgram_api_key,
         settings=DeepgramSTTService.Settings(model=DEEPGRAM_MODEL, keyterm=[c.name for c in cast]),

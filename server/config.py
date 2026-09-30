@@ -23,10 +23,21 @@ ROOM = "room"  # the main worker: transport, STT, the director, TTS
 
 # --- The director -----------------------------------------------------------------------------
 
-HISTORY_LINES = 10  # lines of the conversation Jev is shown with each question
+# Lines of the conversation Jev is shown with each question: enough to keep the introductions in
+# view, so "so who liked blue?" can find who said it.
+HISTORY_LINES = 30
 # Whoever the user spoke to last counts this many times as likely before Jev's reading of the new
-# words (1 turns it off): "and number?" stays with them, while a name or a correction still wins.
-RECENCY_WEIGHT = 2.0
+# words (1 turns it off). Kept light: Jev already sees who that was, so this only settles
+# near-ties, and a name, a question about what someone said, or a correction always wins.
+RECENCY_WEIGHT = 1.2
+INCLUDED_FLOOR = 0.5  # a group turn: how sure Jev must be that a character is one of those asked
+# After a character's line, Jev decides whether someone else answers it (this sure, at least), and
+# whether the exchange has run its course. The characters bounce off each other until Jev hands
+# the floor back to the user, or, as a backstop only, this many replies in a row.
+REPLY_FLOOR = 0.5
+CLOSE_FLOOR = 0.5  # ...unless Jev is this sure the exchange has run its course
+MAX_BOUNCES = 6
+MAX_CAST = 8
 JEV_TIMEOUT_S = 3.0
 JEV_CACHE_SIZE = 256  # questions asked while the user spoke make the final one free
 ROUTE_WAIT_S = 1.5  # a route never waits longer than this on Jev: then the last speaker answers
@@ -50,21 +61,23 @@ class Character:
     tagline: str
     voice: str  # Cartesia voice id
     topics: str  # what they know best: Jev routes a question with no name by it
+    colour: str  # their favourite colour (and their tint on screen)
 
     def brief(self) -> str:
         return f"{self.name}, the {self.role.lower()}: {self.tagline}"
 
 
-def load_cast() -> tuple[Character, Character]:
-    """The two characters, from `characters.json` (the client reads the same file)."""
-    fields = ("id", "name", "role", "tagline", "voice", "topics")
-    cast = [
+def load_cast() -> tuple[Character, ...]:
+    """The characters, from `characters.json` (the client reads the same file)."""
+    fields = ("id", "name", "role", "tagline", "voice", "topics", "colour")
+    cast = tuple(
         Character(**{k: entry[k] for k in fields})
         for entry in json.loads((ROOT / "characters.json").read_text())
-    ]
-    if len(cast) != 2 or cast[0].id == cast[1].id:
-        raise ValueError("characters.json must list exactly two characters with distinct ids")
-    return cast[0], cast[1]
+    )
+    ids = [c.id for c in cast]
+    if not 2 <= len(cast) <= MAX_CAST or len(set(ids)) != len(ids):
+        raise ValueError(f"characters.json must list 2 to {MAX_CAST} characters, ids distinct")
+    return cast
 
 
 def load_environment() -> None:
