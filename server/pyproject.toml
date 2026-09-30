@@ -1,0 +1,27 @@
+[project]
+name = "two-convos-server"
+version = "0.1.0"
+description = "One conversation, two characters: Jev routes each user turn to the character being addressed; PhoneLLM speaks as them in their own Cartesia voice"
+requires-python = ">=3.12"
+dependencies = [
+    "pipecat-ai[cartesia,deepgram,jev,openai,runner,silero,webrtc]==1.12.0",
+    "python-dotenv>=1.1,<2",
+]
+
+[dependency-groups]
+dev = ["pyright>=1.1.404,<2", "pytest>=8", "pytest-asyncio>=0.24", "ruff>=0.12.11,<1"]
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I", "UP"]
+
+[tool.pyright]
+venvPath = "."
+venv = ".venv"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+pythonpath = ["."]
+testpaths = ["tests"]

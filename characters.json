@@ -1,0 +1,20 @@
+[
+  {
+    "id": "maya",
+    "name": "Maya",
+    "role": "Botanist",
+    "tagline": "Grows everything in the kitchen garden. Talks to her tomatoes.",
+    "voice": "db6b0ed5-d5d3-463d-ae85-518a07d3c2b4",
+    "voiceName": "Skylar",
+    "topics": "plants, flowers, gardens, growing fruit and vegetables, soil, seasons, nature"
+  },
+  {
+    "id": "theo",
+    "name": "Theo",
+    "role": "Chef",
+    "tagline": "Cooks whatever Maya grows. Grumbles about it the whole time.",
+    "voice": "ef191366-f52f-447a-a398-ed8c0f2943a1",
+    "voiceName": "Archie",
+    "topics": "food, cooking, recipes, ingredients, kitchens, restaurants, wine"
+  }
+]

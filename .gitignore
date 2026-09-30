@@ -1,0 +1,16 @@
+# Secrets: every key lives in the repo-root .env (see .env.example).
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+.venv/
+.pytest_cache/
+.ruff_cache/
+
+# Node
+node_modules/
+dist/
+
+.DS_Store
